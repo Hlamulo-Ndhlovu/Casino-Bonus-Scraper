@@ -1,0 +1,27 @@
+{
+  "scraped_at": "2026-10-19T09:21:17+00:00",
+  "source": "https://www.gambling.com/uk/online-casinos/bonus",
+  "casinos": [
+    {
+      "casino": "Mr Vegas Casino",
+      "welcome_bonus": "100% up to £50 + 11 Free Spins",
+      "wagering_multiplier": 10,
+      "minimum_deposit": "£10",
+      "source_url": "https://www.gambling.com/uk/online-casinos/bonus"
+    },
+    {
+      "casino": "Mega Riches Casino",
+      "welcome_bonus": "100% up to £25 + 50 Chances to Become a Millionaire",
+      "wagering_multiplier": 10,
+      "minimum_deposit": "£10",
+      "source_url": "https://www.gambling.com/uk/online-casinos/bonus"
+    },
+    {
+      "casino": "Videoslots Casino",
+      "welcome_bonus": "100% up to £50 + 11 Free Spins",
+      "wagering_multiplier": 10,
+      "minimum_deposit": "£10",
+      "source_url": "https://www.gambling.com/uk/online-casinos/bonus"
+    }
+  ]
+}
