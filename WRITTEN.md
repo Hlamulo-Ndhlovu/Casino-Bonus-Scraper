@@ -1,0 +1,11 @@
+# Taking this to production: 200 casinos, updated daily
+
+**Where it runs.** One small VPS (Hetzner CX22 or similar, 2 vCPU / 4 GB, Ubuntu LTS). 200 pages once a day is a few minutes of work, so serverless or Kubernetes would add moving parts without benefit, and a VPS also gives me cron, Postgres and Caddy on one box I understand end to end. A second small instance can be added later if scraping ever needs a headless browser.
+
+**Database.** PostgreSQL on the same VPS. Tables: `casinos`, `bonus_snapshots` (one row per casino per day, with raw terms text, the extracted fields, source URL, scrape time and extraction status). Keeping every snapshot means a bad LLM run can be reviewed and reverted, and bonus changes over time come for free. Backups: nightly `pg_dump` to object storage (Backblaze B2 or S3) with 30 days of retention, plus weekly VPS snapshots, and I would test a restore before launch.
+
+**Domain, DNS, HTTPS.** Domain at a registrar with an API (Cloudflare or Namecheap), A/AAAA records pointing at the VPS, Cloudflare in front for caching and DDoS cover. Caddy terminates TLS and renews Let's Encrypt certificates automatically. The public site is static HTML generated from the database after each scrape, so the public path has no live database or application code to attack.
+
+**Scheduling and failure detection.** A systemd timer runs the scraper at 03:00. Each casino is handled independently, with a per-domain delay, robots.txt checks and retries, so one failure does not stop the run. The run writes a summary (succeeded, failed, fields null, offers changed by more than a threshold). A dead-man's-switch check (Healthchecks.io) pings on success, so a silent failure of the timer itself alerts me by email or Telegram. Extra alerts: more than 5% of casinos failing, a casino returning no data for 3 days, or the LLM returning invalid JSON. Stale data is shown with its timestamp, not hidden.
+
+**Rough monthly cost.** VPS about €5–8, object storage backups about €1–2, domain about €1 (amortised), Cloudflare free, Healthchecks free tier. LLM extraction: 200 casinos × 30 days × roughly 1,000 tokens with a small model comes to a couple of dollars per month, and skipping extraction when the page text hash has not changed cuts it further. Total: roughly €10–15 per month.
