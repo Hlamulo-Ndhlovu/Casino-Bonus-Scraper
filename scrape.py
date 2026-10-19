@@ -24,9 +24,8 @@ from bs4 import BeautifulSoup
 SOURCE_URL = "https://www.gambling.com/uk/online-casinos/bonus"
 USER_AGENT = "bonus-screening-task/1.0 (small personal project; contact via repo)"
 LIMIT = 3
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-GEMINI_URL = GEMINI_BASE + "/{model}:generateContent"
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 OUTPUT = "bonuses.json"
 
 
@@ -34,29 +33,16 @@ OUTPUT = "bonuses.json"
 # Fetching (polite: robots.txt checked, no bypassing of blocks)
 # --------------------------------------------------------------------------
 def allowed_by_robots(url: str) -> bool:
-    """Fetch robots.txt with the same identity as the scraper and apply its rules.
-
-    (The stdlib RobotFileParser.read() uses its own 'Python-urllib' identity and
-    treats any 401/403 as 'everything forbidden', which gave a false stop.)
-    """
     parts = urlparse(url)
-    robots_url = f"{parts.scheme}://{parts.netloc}/robots.txt"
-    resp = requests.get(robots_url, headers={"User-Agent": USER_AGENT}, timeout=30)
-    if resp.status_code in (404, 410):
-        return True  # no robots.txt: nothing is disallowed
-    if resp.status_code != 200:
-        sys.exit(
-            f"Could not read {robots_url} (HTTP {resp.status_code}). "
-            "The site may be blocking this script. Not bypassing; switch source."
-        )
     rp = urllib.robotparser.RobotFileParser()
-    rp.parse(resp.text.splitlines())
+    rp.set_url(f"{parts.scheme}://{parts.netloc}/robots.txt")
+    rp.read()
     return rp.can_fetch(USER_AGENT, url)
 
 
 def fetch(url: str) -> str:
     if not allowed_by_robots(url):
-        sys.exit(f"robots.txt rules disallow fetching {url}. Switch source.")
+        sys.exit(f"robots.txt disallows fetching {url}. Switch source.")
     resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
     if resp.status_code in (401, 403, 429) or "captcha" in resp.text[:5000].lower():
         sys.exit(
@@ -136,40 +122,19 @@ Return ONLY a JSON object with exactly these keys:
 Only use information present in the text above."""
 
 
-def pick_available_model() -> str | None:
-    """Ask the API which text models this key can use; return a 'flash' one."""
-    r = requests.get(
-        GEMINI_BASE,
-        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
-        params={"pageSize": 100},
-        timeout=30,
-    )
-    if r.status_code != 200:
-        return None
-    skip = ("image", "tts", "live", "audio", "embedding", "robotics", "computer")
-    names = [
-        m["name"].split("/")[-1]
-        for m in r.json().get("models", [])
-        if "generateContent" in m.get("supportedGenerationMethods", [])
-    ]
-    flash = [n for n in names if "flash" in n and not any(s in n for s in skip)]
-    return flash[0] if flash else None
-
-
 def call_llm(prompt: str) -> str:
-    global MODEL
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
-    }
-    headers = {"x-goog-api-key": os.environ["GEMINI_API_KEY"]}
-    resp = requests.post(GEMINI_URL.format(model=MODEL), headers=headers, json=body, timeout=(15, 120))
-    if resp.status_code == 404:  # model name not available to this key: find one
-        alt = pick_available_model()
-        if alt and alt != MODEL:
-            print(f"  model '{MODEL}' not available; using '{alt}'")
-            MODEL = alt
-            resp = requests.post(GEMINI_URL.format(model=MODEL), headers=headers, json=body, timeout=(15, 120))
+    resp = requests.post(
+        GEMINI_URL.format(model=MODEL),
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+            },
+        },
+        timeout=60,
+    )
     if resp.status_code != 200:
         raise RuntimeError(f"Gemini API HTTP {resp.status_code}: {resp.text[:300]}")
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -185,7 +150,6 @@ def extract_fields(offer: dict) -> dict:
             return validate(data)
         except Exception as e:  # retry on API hiccups or malformed output
             last_err = e
-            print(f"  attempt {attempt + 1}/3 failed: {str(e)[:150]}")
             time.sleep(2 * (attempt + 1))
     raise RuntimeError(f"LLM extraction failed for {offer['casino']}: {last_err}")
 
